@@ -1,0 +1,173 @@
+# ============================================================
+# Urban Flood Susceptibility Mapping in Port Harcourt & Warri
+# Using GIS and Machine Learning (Synthetic Data)
+# ============================================================
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.preprocessing import MinMaxScaler
+
+# ------------------------------------------------------------
+# 1. Synthetic Urban GIS Data Generation
+# ------------------------------------------------------------
+
+def generate_urban_flood_data(size=80, city="Port Harcourt"):
+    """
+    Generates synthetic GIS layers for urban flood susceptibility
+    """
+
+    np.random.seed(42 if city == "Port Harcourt" else 24)
+
+    # Elevation (m)
+    elevation = np.random.normal(12, 3, (size, size))
+    elevation = np.clip(elevation, 2, 25)
+
+    # Slope (degrees)
+    slope = np.random.normal(3.5, 1.2, (size, size))
+    slope = np.clip(slope, 0.5, 12)
+
+    # Distance to river (m)
+    distance_river = np.random.exponential(500, (size, size))
+    distance_river = np.clip(distance_river, 50, 2000)
+
+    # Land use (0=vegetation, 1=built-up)
+    land_use = np.random.choice([0, 1], size=(size, size), p=[0.35, 0.65])
+
+    # Drainage density
+    drainage_density = np.random.normal(2.8, 0.6, (size, size))
+    drainage_density = np.clip(drainage_density, 1.0, 4.5)
+
+    # Rainfall intensity (mm/hr)
+    rainfall = np.random.normal(65, 12, (size, size))
+    rainfall = np.clip(rainfall, 30, 120)
+
+    # Flood susceptibility logic
+    flood_risk = (
+        (elevation < 8).astype(int) +
+        (slope < 2).astype(int) +
+        (distance_river < 400).astype(int) +
+        land_use +
+        (rainfall > 70).astype(int)
+    )
+
+    flood_label = (flood_risk >= 3).astype(int)
+
+    return elevation, slope, distance_river, land_use, drainage_density, rainfall, flood_label
+
+
+# Generate data for both cities
+ph_data = generate_urban_flood_data(city="Port Harcourt")
+warri_data = generate_urban_flood_data(city="Warri")
+
+# ------------------------------------------------------------
+# 2. Dataset Preparation
+# ------------------------------------------------------------
+
+def prepare_ml_dataset(data):
+    elevation, slope, dist_river, land_use, drainage, rainfall, label = data
+    rows = []
+
+    for i in range(elevation.shape[0]):
+        for j in range(elevation.shape[1]):
+            rows.append([
+                elevation[i, j],
+                slope[i, j],
+                dist_river[i, j],
+                land_use[i, j],
+                drainage[i, j],
+                rainfall[i, j],
+                label[i, j]
+            ])
+
+    return pd.DataFrame(
+        rows,
+        columns=[
+            "elevation_m",
+            "slope_deg",
+            "distance_to_river_m",
+            "land_use_builtup",
+            "drainage_density",
+            "rainfall_intensity_mmhr",
+            "flood_susceptibility"
+        ]
+    )
+
+df_ph = prepare_ml_dataset(ph_data)
+df_warri = prepare_ml_dataset(warri_data)
+
+df = pd.concat([df_ph, df_warri], ignore_index=True)
+
+# ------------------------------------------------------------
+# 3. Feature Scaling & Split
+# ------------------------------------------------------------
+
+X = df.drop("flood_susceptibility", axis=1)
+y = df["flood_susceptibility"]
+
+scaler = MinMaxScaler()
+X_scaled = scaler.fit_transform(X)
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X_scaled, y, test_size=0.25, random_state=42
+)
+
+# ------------------------------------------------------------
+# 4. Machine Learning Model
+# ------------------------------------------------------------
+
+model = RandomForestClassifier(
+    n_estimators=200,
+    max_depth=14,
+    random_state=42,
+    n_jobs=-1
+)
+
+model.fit(X_train, y_train)
+
+# ------------------------------------------------------------
+# 5. Model Evaluation
+# ------------------------------------------------------------
+
+y_pred = model.predict(X_test)
+
+print("Urban Flood Susceptibility Model Performance")
+print("--------------------------------------------")
+print(classification_report(y_test, y_pred, target_names=[
+    "Low Susceptibility",
+    "High Susceptibility"
+]))
+
+print("Confusion Matrix:")
+print(confusion_matrix(y_test, y_pred))
+
+# ------------------------------------------------------------
+# 6. Spatial Flood Susceptibility Mapping
+# ------------------------------------------------------------
+
+def visualize_flood_map(data, city_name):
+    elevation, slope, dist_river, land_use, drainage, rainfall, _ = data
+
+    stacked = np.stack([
+        elevation, slope, dist_river,
+        land_use, drainage, rainfall
+    ], axis=-1)
+
+    reshaped = stacked.reshape(-1, 6)
+    reshaped_scaled = scaler.transform(reshaped)
+
+    prediction = model.predict(reshaped_scaled)
+    flood_map = prediction.reshape(elevation.shape)
+
+    plt.figure(figsize=(6, 5))
+    plt.imshow(flood_map, cmap="RdYlBu_r")
+    plt.title(f"Flood Susceptibility Map – {city_name}")
+    plt.colorbar(label="Flood Risk")
+    plt.axis("off")
+    plt.show()
+
+visualize_flood_map(ph_data, "Port Harcourt")
+visualize_flood_map(warri_data, "Warri")
