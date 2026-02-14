@@ -90,4 +90,5 @@ MIT License
 
 👤 Author
 
-Ebingiye Nelvin Agbozu
+AGBOZU EBINGIYE NELVIN
+LinkedIn: *https://www.linkedin.com/in/agbozu-ebi/
